@@ -8,11 +8,6 @@ struct efcApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                // Optional: Remove onAppear if you rely on AppDelegate for scheduling
-                .onAppear {
-                    // Automatically schedule the background upload task when the app starts
-                    appDelegate.scheduleDailyUpload()
-                }
         }
     }
 }
