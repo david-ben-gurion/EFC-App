@@ -460,67 +460,83 @@ class HealthStoreManager: NSObject, ASAuthorizationControllerDelegate, Observabl
             return nil
         }
     }
-    func fetchAndUploadHealthData(completion: @escaping (Bool) -> Void) {
+    func fetchAndUploadHealthData() async -> Bool {
         guard let userName = UserDefaults.standard.string(forKey: "userName") else {
             print("Username not found")
-            completion(false)
-            return
+            return false
         }
-        // Request HealthKit authorization
-        requestAuthorization { success in
-            guard success else {
-                print("Failed to get HealthKit authorization")
-                completion(false)
-                return
-            }
-            // Fetch health data sequentially
-            self.fetchStepCount { stepCount in
-                self.fetchSleepData { sleepData in
-                    self.fetchWorkoutData { workoutData in
-                        self.fetchHeartRateData { heartRateData in
-                            self.fetchRestingHeartRateData { restingHeartRateData in
-                                self.fetchActiveEnergyData { activeEnergyData in
-                                    self.fetchBasalEnergyData { basalEnergyData in
-                                        self.fetchStandTimeData { standTimeData in
-                                            self.fetchWalkingRunningDistanceData { distanceData in
-                                                self.fetchExerciseTimeData { exerciseTimeData in
-                                                    self.fetchFlightsClimbedData { flightsClimbedData in
-                                                        // Fetch the latest height data
-                                                        self.fetchLatestHeightData { heightInCentimeters in
-                                                            // Fetch the latest weight data
-                                                            self.fetchLatestWeightData { weightInKilograms in
-                                                                // Upload all health data (steps, sleep, workouts, heart rate, resting heart rate, active energy, basal energy, stand time, distance, exercise time, flights climbed, height, and weight) to S3
-                                                                self.uploadDataToS3(
-                                                                    stepCount: stepCount,
-                                                                    sleepData: sleepData,
-                                                                    workoutData: workoutData,
-                                                                    heartRateData: heartRateData,
-                                                                    restingHeartRateData: restingHeartRateData,
-                                                                    activeEnergyData: activeEnergyData,
-                                                                    basalEnergyData: basalEnergyData,
-                                                                    standTimeData: standTimeData,
-                                                                    distanceData: distanceData,
-                                                                    exerciseTimeData: exerciseTimeData,
-                                                                    flightsClimbedData: flightsClimbedData, // Pass flights climbed data
-                                                                    heightData: heightInCentimeters, // Pass height data
-                                                                    weightData: weightInKilograms, // Pass weight data
-                                                                    userName: userName
-                                                                )
-                                                                // Completion handler to indicate success
-                                                                completion(true)
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        let authorizationSuccess = await requestAuthorization()
+        guard authorizationSuccess else {
+            print("Failed to get HealthKit authorization")
+            return false
+        }
+        
+        async let stepCount = fetchStepCount()
+        async let sleepData = fetchSleepData()
+        async let workoutData = fetchWorkoutData()
+        async let heartRateData = fetchHeartRateData()
+        async let restingHeartRateData = fetchRestingHeartRateData()
+        async let activeEnergyData = fetchActiveEnergyData()
+        async let basalEnergyData = fetchBasalEnergyData()
+        async let standTimeData = fetchStandTimeData()
+        async let distanceData = fetchWalkingRunningDistanceData()
+        async let exerciseTimeData = fetchExerciseTimeData()
+        async let flightsClimbedData = fetchFlightsClimbedData()
+        async let heightInCentimeters = fetchLatestHeightData()
+        async let weightInKilograms = fetchLatestWeightData()
+
+        do {
+            let (
+                stepCount,
+                sleepData,
+                workoutData,
+                heartRateData,
+                restingHeartRateData,
+                activeEnergyData,
+                basalEnergyData,
+                standTimeData,
+                distanceData,
+                exerciseTimeData,
+                flightsClimbedData,
+                heightInCentimeters,
+                weightInKilograms
+            ) = try await (
+                stepCount,
+                sleepData,
+                workoutData,
+                heartRateData,
+                restingHeartRateData,
+                activeEnergyData,
+                basalEnergyData,
+                standTimeData,
+                distanceData,
+                exerciseTimeData,
+                flightsClimbedData,
+                heightInCentimeters,
+                weightInKilograms
+            )
+    
+            uploadDataToS3(
+                stepCount: stepCount,
+                sleepData: sleepData,
+                workoutData: workoutData,
+                heartRateData: heartRateData,
+                restingHeartRateData: restingHeartRateData,
+                activeEnergyData: activeEnergyData,
+                basalEnergyData: basalEnergyData,
+                standTimeData: standTimeData,
+                distanceData: distanceData,
+                exerciseTimeData: exerciseTimeData,
+                flightsClimbedData: flightsClimbedData,
+                heightData: heightInCentimeters,
+                weightData: weightInKilograms,
+                userName: userName
+            )
+            
+            return true
+        } catch {
+            print("Failed to fetch health data: \(error)")
+            return false
         }
     }
     func startObservingHealthKitChanges() {
