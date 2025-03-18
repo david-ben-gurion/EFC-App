@@ -5,84 +5,93 @@ import HealthKit
 class AppDelegate: NSObject, UIApplicationDelegate {
 
     let backgroundTaskIdentifier = "com.yourapp.healthdata.upload"
+    let healthStore = HKHealthStore()
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Register the background task
         BGTaskScheduler.shared.register(forTaskWithIdentifier: backgroundTaskIdentifier, using: nil) { task in
             self.handleHealthDataUpload(task: task as! BGAppRefreshTask)
         }
-
-        // Schedule the first upload task
         scheduleDailyUpload()
-        
         requestHealthKitAuthorization()
-
         return true
     }
     
     func requestHealthKitAuthorization() {
-            let healthStore = HKHealthStore()
-            let dataTypesToRead: Set<HKSampleType> = [
-                HKObjectType.quantityType(forIdentifier: .stepCount)!,
-                HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!,
-                HKObjectType.quantityType(forIdentifier: .heartRate)!,
-                HKObjectType.quantityType(forIdentifier: .restingHeartRate)!,
-                HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
-                HKObjectType.quantityType(forIdentifier: .basalEnergyBurned)!,
-                HKObjectType.quantityType(forIdentifier: .appleStandTime)!,
-                HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)!,
-                HKObjectType.quantityType(forIdentifier: .appleExerciseTime)!,
-                HKObjectType.quantityType(forIdentifier: .flightsClimbed)!,
-                HKObjectType.quantityType(forIdentifier: .height)!,
-                HKObjectType.quantityType(forIdentifier: .bodyMass)!
-            ]
+        let dataTypesToRead: Set<HKSampleType> = [
+            HKObjectType.quantityType(forIdentifier: .stepCount)!,
+            HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!,
+            HKObjectType.quantityType(forIdentifier: .heartRate)!,
+            HKObjectType.quantityType(forIdentifier: .restingHeartRate)!,
+            HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
+            HKObjectType.quantityType(forIdentifier: .basalEnergyBurned)!,
+            HKObjectType.quantityType(forIdentifier: .appleStandTime)!,
+            HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)!,
+            HKObjectType.quantityType(forIdentifier: .appleExerciseTime)!,
+            HKObjectType.quantityType(forIdentifier: .flightsClimbed)!,
+            HKObjectType.quantityType(forIdentifier: .height)!,
+            HKObjectType.quantityType(forIdentifier: .bodyMass)!
+        ]
+        healthStore.requestAuthorization(toShare: nil, read: dataTypesToRead) { success, error in
+            if success {
+                self.enableBackgroundDeliveryForHealthData()
+            } else if let error = error {
+                print("HealthKit authorization failed: \(error)")
+            }
+        }
+    }
 
-            healthStore.requestAuthorization(toShare: nil, read: dataTypesToRead) { success, error in
+    func enableBackgroundDeliveryForHealthData() {
+        let dataTypes = [
+            HKObjectType.quantityType(forIdentifier: .stepCount)!,
+            HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!,
+            HKObjectType.quantityType(forIdentifier: .heartRate)!,
+            HKObjectType.quantityType(forIdentifier: .restingHeartRate)!,
+            HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
+            HKObjectType.quantityType(forIdentifier: .basalEnergyBurned)!,
+            HKObjectType.quantityType(forIdentifier: .appleStandTime)!,
+            HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)!,
+            HKObjectType.quantityType(forIdentifier: .appleExerciseTime)!,
+            HKObjectType.quantityType(forIdentifier: .flightsClimbed)!,
+            HKObjectType.quantityType(forIdentifier: .height)!,
+            HKObjectType.quantityType(forIdentifier: .bodyMass)!
+        ]
+
+        for dataType in dataTypes {
+            healthStore.enableBackgroundDelivery(for: dataType, frequency: .immediate) { success, error in
                 if success {
-                    print("HealthKit authorization granted")
+                    print("Enabled background delivery for \(dataType.identifier)")
                 } else if let error = error {
-                    print("HealthKit authorization failed: \(error)")
+                    print("Failed to enable background delivery for \(dataType.identifier): \(error)")
                 }
             }
         }
+    }
 
-    
-    // Schedule the background task for daily execution
     func scheduleDailyUpload() {
         print("[AppDelegate] Scheduling daily background task.")
         let request = BGAppRefreshTaskRequest(identifier: backgroundTaskIdentifier)
         request.earliestBeginDate = Date(timeIntervalSinceNow: 24*60*60)
-        
         do {
             try BGTaskScheduler.shared.submit(request)
             print("[AppDelegate] Daily background task scheduled.")
-            
-            
-            
         } catch {
             print("[AppDelegate] Could not schedule daily background task: \(error.localizedDescription)")
         }
     }
 
-    // Handle the background task when it's triggered by the system
     func handleHealthDataUpload(task: BGAppRefreshTask) {
         print("[AppDelegate] Background task triggered.")
-
-        // Call your upload function with completion handler
-        HealthStoreManager.shared.fetchAndUploadHealthData { success in
+        Task {
+            let success = await HealthStoreManager.shared.fetchAndUploadHealthData()
             if success {
                 print("[AppDelegate] Upload completed successfully.")
                 task.setTaskCompleted(success: true)
-                
-                // Schedule the next day's upload after a successful upload
                 self.scheduleDailyUpload()
             } else {
                 print("[AppDelegate] Upload failed.")
                 task.setTaskCompleted(success: false)
             }
         }
-
-        // Handle task expiration (e.g., if upload takes too long)
         task.expirationHandler = {
             print("[AppDelegate] Background task expired.")
             task.setTaskCompleted(success: false)
